@@ -29,7 +29,7 @@ typedef enum Register {
     REGISTER_R6,
     REGISTER_R7,
     REGISTER_PC,
-    REGISTER_COND,
+    REGISTER_PSR,
     REGISTER_MAX
 } Register;
 
@@ -53,11 +53,27 @@ typedef enum Opcode {
     OPCODE_MAX
 } Opcode;
 
-typedef enum ConditionFlags {
-    CONDFLAG_POS = 1 << 0,
-    CONDFLAG_ZRO = 1 << 1,
-    CONDFLAG_NEG = 1 << 2,
-} ConditionFlags;
+typedef enum PriorityLevel {
+    PL0 = 0,
+    PL1,
+    PL2,
+    PL3,
+    PL4,
+    PL5,
+    PL6,
+    PL7,
+} PriorityLevel;
+
+typedef enum PrivilegeMode { SUPERVISOR_MODE = 0, USER_MODE = 1 } PrivilegeMode;
+
+typedef enum ProcessorStatus {
+    PSR_CONDFLAG_POS = 1 << 0,
+    PSR_CONDFLAG_ZRO = 1 << 1,
+    PSR_CONDFLAG_NEG = 1 << 2,
+    PSR_PRIVILLAGE = 1 << 15,
+}
+
+ProcessorStatus;
 
 typedef enum TrapTable {
     TRAP_GETC =
@@ -227,7 +243,7 @@ static void lc3vm_initialize(void) {
 
     running = true;
 
-    registers[REGISTER_COND] = CONDFLAG_ZRO;
+    registers[REGISTER_PSR] = PSR_CONDFLAG_ZRO;
     registers[REGISTER_PC] = 0x3000;  // default starting position
 }
 
@@ -238,11 +254,12 @@ static void lc3vm_shutdown(void) {
 static void lc3vm_br(uint16_t instruction) {
     assert(instruction >> 12 == OPCODE_BR);
 
-    if ((GET_BIT(instruction, 11) && (registers[REGISTER_COND] & CONDFLAG_NEG))
+    if ((GET_BIT(instruction, 11)
+         && (registers[REGISTER_PSR] & PSR_CONDFLAG_NEG))
         || (GET_BIT(instruction, 10)
-            && (registers[REGISTER_COND] & CONDFLAG_ZRO))
+            && (registers[REGISTER_PSR] & PSR_CONDFLAG_ZRO))
         || (GET_BIT(instruction, 9)
-            && (registers[REGISTER_COND] & CONDFLAG_POS)))
+            && (registers[REGISTER_PSR] & PSR_CONDFLAG_POS)))
         registers[REGISTER_PC] += sext(instruction & 0x1ff, 9);
 }
 
@@ -320,7 +337,12 @@ static void lc3vm_str(uint16_t instruction) {
 static void lc3vm_rti(uint16_t instruction) {
     assert(instruction >> 12 == OPCODE_RTI);
 
-    running = false;
+    if (GET_BIT(registers[REGISTER_PSR], 15)) {
+    } else {
+        registers[REGISTER_PC] = memory[registers[REGISTER_R6]];
+        registers[REGISTER_PSR] = memory[registers[REGISTER_R6] + 1];
+        registers[REGISTER_R6] += 2;
+    }
 }
 
 static void lc3vm_not(uint16_t instruction) {
@@ -433,16 +455,22 @@ static uint16_t sext(uint16_t a, int bit_count) {
 }
 
 static void setcc(uint16_t reg) {
-    if (registers[reg] == 0) registers[REGISTER_COND] = CONDFLAG_ZRO;
-    else if (registers[reg] >> 15) registers[REGISTER_COND] = CONDFLAG_NEG;
-    else registers[REGISTER_COND] = CONDFLAG_POS;
+    if (registers[reg] == 0)
+        registers[REGISTER_PSR] =
+            (registers[REGISTER_PSR] & (0xffff << 3)) | PSR_CONDFLAG_ZRO;
+    else if (registers[reg] >> 15)
+        registers[REGISTER_PSR] =
+            (registers[REGISTER_PSR] & (0xffff << 3)) | PSR_CONDFLAG_NEG;
+    else
+        registers[REGISTER_PSR] =
+            (registers[REGISTER_PSR] & (0xffff << 3)) | PSR_CONDFLAG_POS;
 }
 
 static uint16_t swap16(uint16_t x) {
     return (x << 8) | (x >> 8);
 }
 
-struct termios original_tio;
+static struct termios original_tio;
 
 void disable_input_buffering() {
     tcgetattr(STDIN_FILENO, &original_tio);
