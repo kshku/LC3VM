@@ -4,4 +4,6 @@
 
 bool read_image(const char *file);
 
-void lc3_run(void);
+void lc3vm_run(void);
+
+void lc3vm_run_one_instr(void);

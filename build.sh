@@ -1,5 +1,6 @@
 #!/bin/sh
 
 files="main.c lc3vm.c"
+flags=-g
 
-gcc $files -o lc3vm
+gcc $flags $files -o lc3vm
